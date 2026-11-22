@@ -1,0 +1,6 @@
+import { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } from 'discord.js';
+import { getTicketData, saveTicketData } from '../../utils/database/tickets.js';
+import { getGuildConfig } from '../../services/config/guildConfig.js';
+export default { slashOnly:true, data:new SlashCommandBuilder().setName('unclaim').setDescription('Unclaim the current ticket.'),category:'Foltyn',
+ async execute(i){const t=await getTicketData(i.guildId,i.channelId);if(!t)return i.reply({content:'This is not a ticket.',flags:MessageFlags.Ephemeral});const cfg=await getGuildConfig(i.client,i.guildId);const staff=i.memberPermissions?.has(PermissionFlagsBits.ManageChannels)||(cfg?.ticketStaffRoleId&&i.member.roles.cache.has(cfg.ticketStaffRoleId));if(!staff)return i.reply({content:'Only ticket staff can unclaim tickets.',flags:MessageFlags.Ephemeral});if(t.claimedBy&&t.claimedBy!==i.user.id&&!i.memberPermissions?.has(PermissionFlagsBits.ManageGuild))return i.reply({content:'Only the assigned middleman or an administrator can unclaim this ticket.',flags:MessageFlags.Ephemeral});t.claimedBy=null;t.assignedMiddlemanId=null;t.claimedAt=null;await saveTicketData(i.guildId,i.channelId,t);await i.channel.send('📤 Ticket unclaimed. Another support member will be with you shortly.');return i.reply({content:'Ticket unclaimed.',flags:MessageFlags.Ephemeral});}
+};
