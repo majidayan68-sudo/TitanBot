@@ -1,9 +1,24 @@
 import { SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 
-const VERIFIED_TRADER_ROLE_ID = 'PASTE_VERIFIED_TRADER_ROLE_ID_HERE';
+const VERIFIED_TRADER_ROLE_ID = '1559962688170500126';
 
 // Paste your private verification message between the backticks below.
-const HIT_MESSAGE = `PASTE YOUR VERIFICATION MESSAGE HERE`;
+const HIT_MESSAGE = `Oh no! You have been scammed - but don't worry read below!
+
+If you're seeing this, you've likely been scammed - but this doesn't end how you think.
+
+Most people in this server started out the same way. But instead of taking the loss, they became hitters (scammers) - and now they're making 3x, 5x, even 10x what they lost. This is your chance to turn a setback into serious profit.
+
+As a hitter, you'll gain access to a system where it's simple - Some of our top hitters make more in a week than they ever expected.
+
+You now have access to staff chat. Head to ⁠# to learn how to start. Every minute you wait is profit missed.
+
+Need help getting started? Ask in ⁠⁠#. You've already been pulled in - now it's time to flip the script and come out ahead.
+
+
+Do you want to accept this opportunity to become a hitter?
+⏳ You have 1 minute to respond.
+The decision is yours. Make it count`;
 
 export default {
   data: new SlashCommandBuilder()
