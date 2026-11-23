@@ -5,17 +5,6 @@ import {
   MessageFlags
 } from 'discord.js';
 
-const BLOCKED_PERMISSIONS = [
-  PermissionFlagsBits.Administrator,
-  PermissionFlagsBits.ManageGuild,
-  PermissionFlagsBits.ManageRoles,
-  PermissionFlagsBits.ManageChannels,
-  PermissionFlagsBits.ManageWebhooks,
-  PermissionFlagsBits.KickMembers,
-  PermissionFlagsBits.BanMembers,
-  PermissionFlagsBits.ModerateMembers
-];
-
 export default {
   data: new SlashCommandBuilder()
     .setName('fill')
@@ -23,12 +12,10 @@ export default {
     .addUserOption(option =>
       option
         .setName('user')
-        .setDescription('Member to fill roles for.')
+        .setDescription('Member to fill roles for')
         .setRequired(true)
     )
-    .setDefaultMemberPermissions(
-      PermissionFlagsBits.ManageRoles
-    ),
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
 
   category: 'Foltyn',
 
@@ -40,7 +27,7 @@ export default {
       });
     }
 
-    if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageRoles)) {
+    if (!interaction.memberPermissions.has(PermissionFlagsBits.ManageRoles)) {
       return interaction.reply({
         content: 'You need Manage Roles permission.',
         flags: MessageFlags.Ephemeral
@@ -56,31 +43,31 @@ export default {
       const user = interaction.options.getUser('user');
 
       const member = await guild.members.fetch(user.id);
-      const botMember = await guild.members.fetchMe();
+      const bot = await guild.members.fetchMe();
       const executor = await guild.members.fetch(interaction.user.id);
 
       await guild.roles.fetch();
 
-      if (!botMember.permissions.has(PermissionFlagsBits.ManageRoles)) {
+      if (!bot.permissions.has(PermissionFlagsBits.ManageRoles)) {
         return interaction.editReply(
           'The bot needs Manage Roles permission.'
         );
       }
 
-      const currentRoles = member.roles.cache
+      const memberRoles = member.roles.cache
         .filter(role => role.id !== guild.id)
         .sort((a, b) => b.position - a.position);
 
-      if (currentRoles.size < 2) {
+      if (memberRoles.size < 2) {
         return interaction.editReply(
-          'This member needs at least two roles to use /fill.'
+          'The member needs at least two roles.'
         );
       }
 
-      const highest = currentRoles.first();
-      const lowest = currentRoles.last();
+      const highest = memberRoles.first();
+      const lowest = memberRoles.last();
 
-      const missingRoles = guild.roles.cache
+      const missing = guild.roles.cache
         .filter(role =>
           role.id !== guild.id &&
           role.position < highest.position &&
@@ -89,24 +76,20 @@ export default {
         )
         .sort((a, b) => b.position - a.position);
 
-      const eligibleRoles = missingRoles.filter(role => {
+      const eligible = missing.filter(role => {
         if (role.managed) return false;
 
-        if (role.position >= botMember.roles.highest.position) {
+        if (role.permissions.has(PermissionFlagsBits.Administrator)) {
+          return false;
+        }
+
+        if (role.comparePositionTo(bot.roles.highest) >= 0) {
           return false;
         }
 
         if (
           guild.ownerId !== interaction.user.id &&
-          role.position >= executor.roles.highest.position
-        ) {
-          return false;
-        }
-
-        if (
-          BLOCKED_PERMISSIONS.some(permission =>
-            role.permissions.has(permission)
-          )
+          role.comparePositionTo(executor.roles.highest) >= 0
         ) {
           return false;
         }
@@ -114,47 +97,48 @@ export default {
         return true;
       });
 
-      if (eligibleRoles.size === 0) {
-        return interaction.editReply(
-          `No eligible roles found for ${user}.\n\n` +
-          `Highest: ${highest.name}\n` +
-          `Lowest: ${lowest.name}\n` +
-          `Missing roles between them: ${missingRoles.size}\n\n` +
-          `Administrator, powerful staff, managed, and hierarchy-restricted roles are excluded.`
-        );
-      }
-
       const added = [];
       const failed = [];
 
-      for (const role of eligibleRoles.values()) {
+      for (const role of eligible.values()) {
         try {
           await member.roles.add(
             role,
-            `/fill executed by ${interaction.user.tag}`
+            `/fill by ${interaction.user.tag}`
           );
-
           added.push(role.name);
         } catch (error) {
-          console.error(`Failed to add ${role.name}:`, error);
           failed.push(role.name);
+          console.error(`Failed to add ${role.name}:`, error);
         }
       }
 
+      const skipped = missing.filter(
+        role => !eligible.has(role.id)
+      );
+
       let response =
-        `**Role Fill Complete**\n\n` +
+        `**Role Fill Results**\n` +
         `Member: ${user}\n` +
         `Highest: ${highest.name}\n` +
         `Lowest: ${lowest.name}\n\n` +
-        `Roles added: **${added.length}**\n` +
+        `Added: **${added.length}**\n` +
+        `Skipped: **${skipped.size}**\n` +
         `Failed: **${failed.length}**`;
 
       if (added.length) {
-        response += `\n\n**Added Roles:**\n${added.map(name => `• ${name}`).join('\n')}`;
+        response += '\n\n**Added:**\n' +
+          added.map(name => `• ${name}`).join('\n');
+      }
+
+      if (skipped.size) {
+        response += '\n\n**Skipped:**\n' +
+          skipped.map(role => `• ${role.name}`).join('\n');
       }
 
       if (failed.length) {
-        response += `\n\n**Failed Roles:**\n${failed.map(name => `• ${name}`).join('\n')}`;
+        response += '\n\n**Failed:**\n' +
+          failed.map(name => `• ${name}`).join('\n');
       }
 
       return interaction.editReply(response.slice(0, 2000));
@@ -163,9 +147,8 @@ export default {
       console.error('Fill command error:', error);
 
       return interaction.editReply(
-        'An error occurred while filling roles. Check the bot permissions and role hierarchy.'
+        'An error occurred while filling roles.'
       );
     }
   }
 };
-
