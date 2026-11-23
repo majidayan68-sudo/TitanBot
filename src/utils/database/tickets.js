@@ -1,3 +1,4 @@
+
 import { logger } from '../logger.js';
 import { db, getFromDb } from './wrapper.js';
 import { getTicketCounterKey, getTicketKey } from './keys.js';
@@ -13,33 +14,67 @@ export async function getTicketData(guildId, channelId) {
     return await db.get(key);
 }
 
-export async function getOpenTicketCountForUser(guildId, userId) {
+export async function getOpenTicketCountForUser(
+    guildId,
+    userId,
+    panelId = null
+) {
     try {
         if (!db.initialized) {
             await db.initialize();
         }
 
-        if (db.db?.pool && typeof db.db.isAvailable === 'function' && db.db.isAvailable()) {
-            const { pgConfig } = await import('../../config/database/postgres.js');
+        if (
+            db.db?.pool &&
+            typeof db.db.isAvailable === 'function' &&
+            db.db.isAvailable()
+        ) {
+            const { pgConfig } = await import(
+                '../../config/database/postgres.js'
+            );
+
             const result = await db.db.pool.query(
-                `SELECT COUNT(*)::int AS count FROM ${pgConfig.tables.tickets}
+                `SELECT COUNT(*)::int AS count
+                 FROM ${pgConfig.tables.tickets}
                  WHERE guild_id = $1
                    AND data->>'userId' = $2
-                   AND data->>'status' = 'open'`,
-                [guildId, userId],
+                   AND data->>'status' = 'open'
+                   AND (
+                       $3::text IS NULL
+                       OR COALESCE(data->>'panelId', '1') = $3::text
+                   )`,
+                [
+                    guildId,
+                    userId,
+                    panelId == null ? null : String(panelId)
+                ]
             );
 
             return Number(result.rows?.[0]?.count || 0);
         }
 
         if (typeof db.list === 'function') {
-            const ticketKeys = await db.list(`guild:${guildId}:ticket:`);
+            const ticketKeys = await db.list(
+                `guild:${guildId}:ticket:`
+            );
+
             let count = 0;
 
             for (const key of ticketKeys) {
                 if (key.endsWith(':counter')) continue;
+
                 const ticket = await getFromDb(key, null);
-                if (ticket && ticket.userId === userId && ticket.status === 'open') {
+
+                if (
+                    ticket &&
+                    ticket.userId === userId &&
+                    ticket.status === 'open' &&
+                    (
+                        panelId == null ||
+                        String(ticket.panelId || '1') ===
+                            String(panelId)
+                    )
+                ) {
                     count += 1;
                 }
             }
@@ -48,27 +83,41 @@ export async function getOpenTicketCountForUser(guildId, userId) {
         }
 
         return 0;
+
     } catch (error) {
-        logger.error(`Error counting open tickets for user ${userId} in guild ${guildId}:`, error);
+        logger.error(
+            `Error counting open tickets for user ${userId} in guild ${guildId}:`,
+            error
+        );
+
         return 0;
     }
 }
 
-export async function saveTicketData(guildId, channelId, data) {
+export async function saveTicketData(
+    guildId,
+    channelId,
+    data
+) {
     if (!db.initialized) {
         await db.initialize();
     }
 
     const key = getTicketKey(guildId, channelId);
+
     await db.set(key, data);
 }
 
-export async function deleteTicketData(guildId, channelId) {
+export async function deleteTicketData(
+    guildId,
+    channelId
+) {
     if (!db.initialized) {
         await db.initialize();
     }
 
     const key = getTicketKey(guildId, channelId);
+
     await db.delete(key);
 }
 
@@ -79,6 +128,7 @@ export async function getTicketCounter(guildId) {
 
     const key = getTicketCounterKey(guildId);
     const counter = await db.get(key);
+
     return counter || 0;
 }
 
@@ -88,7 +138,11 @@ export async function incrementTicketCounter(guildId) {
     }
 
     const key = getTicketCounterKey(guildId);
-    const currentCounter = await getTicketCounter(guildId);
+
+    const currentCounter = await getTicketCounter(
+        guildId
+    );
+
     const nextCounter = currentCounter + 1;
 
     await db.set(key, nextCounter);
@@ -101,26 +155,45 @@ async function listGuildTickets(guildId) {
         await db.initialize();
     }
 
-    if (db.db?.pool && typeof db.db.isAvailable === 'function' && db.db.isAvailable()) {
-        const { pgConfig } = await import('../../config/database/postgres.js');
-        const result = await db.db.pool.query(
-            `SELECT data FROM ${pgConfig.tables.tickets} WHERE guild_id = $1`,
-            [guildId],
+    if (
+        db.db?.pool &&
+        typeof db.db.isAvailable === 'function' &&
+        db.db.isAvailable()
+    ) {
+        const { pgConfig } = await import(
+            '../../config/database/postgres.js'
         );
-        return result.rows.map((row) => row.data).filter(Boolean);
+
+        const result = await db.db.pool.query(
+            `SELECT data
+             FROM ${pgConfig.tables.tickets}
+             WHERE guild_id = $1`,
+            [guildId]
+        );
+
+        return result.rows
+            .map(row => row.data)
+            .filter(Boolean);
     }
 
     if (typeof db.list !== 'function') {
         return [];
     }
 
-    const ticketKeys = await db.list(`guild:${guildId}:ticket:`);
+    const ticketKeys = await db.list(
+        `guild:${guildId}:ticket:`
+    );
+
     const tickets = [];
 
     for (const key of ticketKeys) {
         if (key.endsWith(':counter')) continue;
+
         const ticket = await getFromDb(key, null);
-        if (ticket) tickets.push(ticket);
+
+        if (ticket) {
+            tickets.push(ticket);
+        }
     }
 
     return tickets;
@@ -129,6 +202,7 @@ async function listGuildTickets(guildId) {
 export async function getGuildTicketStats(guildId) {
     try {
         const tickets = await listGuildTickets(guildId);
+
         let openCount = 0;
         let closedCount = 0;
         let totalCloseMs = 0;
@@ -139,11 +213,19 @@ export async function getGuildTicketStats(guildId) {
         for (const ticket of tickets) {
             if (ticket.status === 'open') {
                 openCount += 1;
+
             } else if (ticket.status === 'closed') {
                 closedCount += 1;
+
                 if (ticket.createdAt && ticket.closedAt) {
-                    const duration = new Date(ticket.closedAt) - new Date(ticket.createdAt);
-                    if (Number.isFinite(duration) && duration >= 0) {
+                    const duration =
+                        new Date(ticket.closedAt) -
+                        new Date(ticket.createdAt);
+
+                    if (
+                        Number.isFinite(duration) &&
+                        duration >= 0
+                    ) {
                         totalCloseMs += duration;
                         closeSamples += 1;
                     }
@@ -151,7 +233,11 @@ export async function getGuildTicketStats(guildId) {
             }
 
             const rating = ticket.feedback?.rating;
-            if (rating != null && Number.isFinite(Number(rating))) {
+
+            if (
+                rating != null &&
+                Number.isFinite(Number(rating))
+            ) {
                 feedbackCount += 1;
                 ratingSum += Number(rating);
             }
@@ -160,18 +246,34 @@ export async function getGuildTicketStats(guildId) {
         return {
             openCount,
             closedCount,
-            avgCloseTimeMs: closeSamples > 0 ? Math.round(totalCloseMs / closeSamples) : null,
+
+            avgCloseTimeMs:
+                closeSamples > 0
+                    ? Math.round(totalCloseMs / closeSamples)
+                    : null,
+
             feedbackCount,
-            avgRating: feedbackCount > 0 ? Math.round((ratingSum / feedbackCount) * 10) / 10 : null,
+
+            avgRating:
+                feedbackCount > 0
+                    ? Math.round(
+                        (ratingSum / feedbackCount) * 10
+                    ) / 10
+                    : null
         };
+
     } catch (error) {
-        logger.error(`Error computing ticket stats for guild ${guildId}:`, error);
+        logger.error(
+            `Error computing ticket stats for guild ${guildId}:`,
+            error
+        );
+
         return {
             openCount: 0,
             closedCount: 0,
             avgCloseTimeMs: null,
             feedbackCount: 0,
-            avgRating: null,
+            avgRating: null
         };
     }
 }
