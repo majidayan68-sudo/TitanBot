@@ -46,8 +46,8 @@ export default [
  { name:'foltyn_hit_accept', async execute(interaction) {
    const targetId=interaction.customId.split(':')[1];
    if(interaction.user.id!==targetId)return interaction.reply({content:'This verification request is not for you.',flags:MessageFlags.Ephemeral});
-   const roleId='PASTE_VERIFIED_TRADER_ROLE_ID_HERE';
-   if(roleId==='PASTE_VERIFIED_TRADER_ROLE_ID_HERE')return interaction.reply({content:'The Verified Trader role ID has not been configured yet.',flags:MessageFlags.Ephemeral});
+   const roleId='1559962688170500126';
+   if(roleId==='1559962688170500126')return interaction.reply({content:'The Verified Trader role ID has not been configured yet.',flags:MessageFlags.Ephemeral});
    const member=await interaction.guild.members.fetch(targetId);
    const role=await interaction.guild.roles.fetch(roleId).catch(()=>null);
    if(!role)return interaction.reply({content:'The Verified Trader role could not be found. Check the role ID.',flags:MessageFlags.Ephemeral});
