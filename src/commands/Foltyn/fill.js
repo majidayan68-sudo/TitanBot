@@ -1,15 +1,171 @@
-import { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } from 'discord.js';
-import { createEmbed } from '../../utils/embeds.js';
+
+import {
+  SlashCommandBuilder,
+  PermissionFlagsBits,
+  MessageFlags
+} from 'discord.js';
+
+const BLOCKED_PERMISSIONS = [
+  PermissionFlagsBits.Administrator,
+  PermissionFlagsBits.ManageGuild,
+  PermissionFlagsBits.ManageRoles,
+  PermissionFlagsBits.ManageChannels,
+  PermissionFlagsBits.ManageWebhooks,
+  PermissionFlagsBits.KickMembers,
+  PermissionFlagsBits.BanMembers,
+  PermissionFlagsBits.ModerateMembers
+];
+
 export default {
- data:new SlashCommandBuilder().setName('fill').setDescription('Fill missing eligible roles between a member’s highest and lowest roles.').addUserOption(o=>o.setName('user').setDescription('Member to fill').setRequired(false)),category:'Foltyn',
- async execute(i){
-  if(!i.memberPermissions?.has(PermissionFlagsBits.ManageRoles))return i.reply({content:'You need Manage Roles to use this command.',flags:MessageFlags.Ephemeral});
-  const targetUser=i.options.getUser('user')||i.user; const target=await i.guild.members.fetch(targetUser.id).catch(()=>null); if(!target)return i.reply({content:'That member is not in this server.',flags:MessageFlags.Ephemeral}); const bot=i.guild.members.me;
-  if(target.roles.highest.position>=i.member.roles.highest.position&&!i.memberPermissions?.has(PermissionFlagsBits.Administrator))return i.reply({content:'You cannot fill roles for a member whose highest role is equal to or above yours.',flags:MessageFlags.Ephemeral});
-  const assigned=target.roles.cache.filter(r=>r.id!==i.guild.id); const lowest=assigned.reduce((min,r)=>Math.min(min,r.position),Infinity); const highest=target.roles.highest.position; const roles=i.guild.roles.cache.filter(r=>r.id!==i.guild.id&&!r.managed&&r.permissions.bitfield===0n&&!r.tags?.botId&&r.position>lowest&&r.position<highest&&r.position<bot.roles.highest.position);
-  const missing=roles.filter(r=>!target.roles.cache.has(r.id));
-  if(!missing.size)return i.reply({embeds:[createEmbed({title:'Role Fill',description:`❌ No roles to fill — ${target} already has all eligible roles between their highest and lowest.`,color:'#D71920',thumbnail:'https://i.postimg.cc/CxSsGg0c/Server-Logo.png',image:'https://i.postimg.cc/59YXQW59/Server-Banner-GIF.gif'})]});
-  await target.roles.add(missing,'Foltyn role fill command');
-  return i.reply({embeds:[createEmbed({title:`Roles filled for ${target.user.username}`,description:`**Added:** ${missing.map(r=>r.name).join(', ')}\n**Between:** ${target.roles.highest} → ${assigned.sort((a,b)=>a.position-b.position).first()||'@everyone'}`,color:'#D71920',thumbnail:'https://i.postimg.cc/CxSsGg0c/Server-Logo.png',image:'https://i.postimg.cc/59YXQW59/Server-Banner-GIF.gif'})]});
- }
+  data: new SlashCommandBuilder()
+    .setName('fill')
+    .setDescription('Fill missing roles between a member’s highest and lowest roles.')
+    .addUserOption(option =>
+      option
+        .setName('user')
+        .setDescription('Member to fill roles for.')
+        .setRequired(true)
+    )
+    .setDefaultMemberPermissions(
+      PermissionFlagsBits.ManageRoles
+    ),
+
+  category: 'Foltyn',
+
+  async execute(interaction) {
+    if (!interaction.inGuild()) {
+      return interaction.reply({
+        content: 'This command only works in a server.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageRoles)) {
+      return interaction.reply({
+        content: 'You need Manage Roles permission.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    await interaction.deferReply({
+      flags: MessageFlags.Ephemeral
+    });
+
+    try {
+      const guild = interaction.guild;
+      const user = interaction.options.getUser('user');
+
+      const member = await guild.members.fetch(user.id);
+      const botMember = await guild.members.fetchMe();
+      const executor = await guild.members.fetch(interaction.user.id);
+
+      await guild.roles.fetch();
+
+      if (!botMember.permissions.has(PermissionFlagsBits.ManageRoles)) {
+        return interaction.editReply(
+          'The bot needs Manage Roles permission.'
+        );
+      }
+
+      const currentRoles = member.roles.cache
+        .filter(role => role.id !== guild.id)
+        .sort((a, b) => b.position - a.position);
+
+      if (currentRoles.size < 2) {
+        return interaction.editReply(
+          'This member needs at least two roles to use /fill.'
+        );
+      }
+
+      const highest = currentRoles.first();
+      const lowest = currentRoles.last();
+
+      const missingRoles = guild.roles.cache
+        .filter(role =>
+          role.id !== guild.id &&
+          role.position < highest.position &&
+          role.position > lowest.position &&
+          !member.roles.cache.has(role.id)
+        )
+        .sort((a, b) => b.position - a.position);
+
+      const eligibleRoles = missingRoles.filter(role => {
+        if (role.managed) return false;
+
+        if (role.position >= botMember.roles.highest.position) {
+          return false;
+        }
+
+        if (
+          guild.ownerId !== interaction.user.id &&
+          role.position >= executor.roles.highest.position
+        ) {
+          return false;
+        }
+
+        if (
+          BLOCKED_PERMISSIONS.some(permission =>
+            role.permissions.has(permission)
+          )
+        ) {
+          return false;
+        }
+
+        return true;
+      });
+
+      if (eligibleRoles.size === 0) {
+        return interaction.editReply(
+          `No eligible roles found for ${user}.\n\n` +
+          `Highest: ${highest.name}\n` +
+          `Lowest: ${lowest.name}\n` +
+          `Missing roles between them: ${missingRoles.size}\n\n` +
+          `Administrator, powerful staff, managed, and hierarchy-restricted roles are excluded.`
+        );
+      }
+
+      const added = [];
+      const failed = [];
+
+      for (const role of eligibleRoles.values()) {
+        try {
+          await member.roles.add(
+            role,
+            `/fill executed by ${interaction.user.tag}`
+          );
+
+          added.push(role.name);
+        } catch (error) {
+          console.error(`Failed to add ${role.name}:`, error);
+          failed.push(role.name);
+        }
+      }
+
+      let response =
+        `**Role Fill Complete**\n\n` +
+        `Member: ${user}\n` +
+        `Highest: ${highest.name}\n` +
+        `Lowest: ${lowest.name}\n\n` +
+        `Roles added: **${added.length}**\n` +
+        `Failed: **${failed.length}**`;
+
+      if (added.length) {
+        response += `\n\n**Added Roles:**\n${added.map(name => `• ${name}`).join('\n')}`;
+      }
+
+      if (failed.length) {
+        response += `\n\n**Failed Roles:**\n${failed.map(name => `• ${name}`).join('\n')}`;
+      }
+
+      return interaction.editReply(response.slice(0, 2000));
+
+    } catch (error) {
+      console.error('Fill command error:', error);
+
+      return interaction.editReply(
+        'An error occurred while filling roles. Check the bot permissions and role hierarchy.'
+      );
+    }
+  }
 };
+
