@@ -17,9 +17,9 @@ Most people in this server started out the same way. But instead of taking the l
 
 As a hitter, you'll gain access to a system where it's simple - Some of our top hitters make more in a week than they ever expected.
 
-You now have access to staff chat. Head to ⁠# to learn how to start. Every minute you wait is profit missed.
+You now have access to staff chat. Head to ⁠guide to learn how to start. Every minute you wait is profit missed.
 
-Need help getting started? Ask in ⁠⁠#. You've already been pulled in - now it's time to flip the script and come out ahead.
+Need help getting started? Ask in ⁠⁠staff chat. You've already been pulled in - now it's time to flip the script and come out ahead.
 
 
 Do you want to accept this opportunity to become a hitter?
